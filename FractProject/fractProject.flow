@@ -1,0 +1,334 @@
+
+import runtime;
+import maybe;
+import lingo/pegcode/driver;
+import ds/array;
+import ds/arrayutils;
+import ds/tree;
+
+Summm(a: int, b: int) -> int { a + b; }
+Difff(a: int, b: int) -> int { a - b; }
+Proddd(a: int, b: int) -> int { a * b; }
+Divvv(a: int, b: int) -> int { a / b; }
+
+TreeExpres ::= TreeOper, TreeInteger, TreeVarr;
+TreeInteger(value: int);
+TreeVarr(var: string);
+TreeOper(symbol: string, l: TreeExpres, r: TreeExpres, operation: (int, int) -> int);
+
+
+Polynomm : (p : Tree<Monomm, int>);
+Monomm : (m : Tree<string, int>);
+Fractionn : (top : Polynomm, bot : Polynomm);
+
+StringToTreee (s: string)->Maybe<TreeExpres>
+{
+    gram= "#include expfract.lingo";
+    parser=compilePegGrammar(gram);
+    result = parsic3(parser, s, 
+		SemanticActions(mergeTree(defaultPegActions.t, 
+			pairs2tree([
+                Pair("TreeSum", \v -> 
+                    TreeOper("+", v[0], v[1], Summm)
+                ),
+                Pair("TreeDif", \v ->
+                    TreeOper("-", v[0], v[1], Difff)
+                ),
+				Pair("TreeProd", \v ->
+                    TreeOper("*", v[0], v[1], Proddd)
+                ),
+				Pair("TreeDiv", \v ->
+                    TreeOper("/", v[0], v[1], Divvv)
+                )
+            ])
+        )), 
+		TreeInteger(0)
+	);
+	if (result.third == "") {
+		Some(result.first);
+	} else {
+		None();
+	}
+}
+
+TreeToStringg(t: TreeExpres) -> string {
+	switch (t) {
+		TreeInteger(value): i2s(value);
+		TreeVarr(var): var;
+		TreeOper(symbol, left, right, operation): "(" + TreeToStringg(left) + " " + symbol + " " + TreeToStringg(right) + ")"; 
+	}
+}
+
+TreeToIntt(t: TreeExpres, variabless: Tree<string, int>) -> int {
+	switch (t) {
+		TreeInteger(value): value;
+		TreeVarr(var): {
+			switch (lookupTree(variabless, var)) {
+				Some(value): value
+				None(): 0
+			}
+		}
+		TreeOper(symbol, left, right, operation): operation(TreeToIntt(left, variabless), TreeToIntt(right, variabless));
+	}
+}
+
+
+Proizvod(a: TreeExpres, var :string) -> TreeExpres
+{
+    switch(a)
+    {
+        TreeOper(symbol, left, right, operation):{
+            if (symbol == "+")
+            {
+                TreeOper(symbol, Proizvod(left, var), Proizvod(right, var), Summm)
+            }
+            else if (symbol == "-")
+            {
+                TreeOper(symbol, Proizvod(left, var), Proizvod(right, var), Difff)
+            }
+            else if (symbol == "*")
+            {
+                TreeOper("+", TreeOper( symbol, Proizvod(left, var), right, Proddd), TreeOper( symbol, left,Proizvod(right, var), Proddd), Summm)
+            }
+            else //(symbol == "/")
+            {
+                TreeOper( symbol, TreeOper("-", TreeOper( "*", Proizvod(left, var), right, Proddd), TreeOper( "*", left,Proizvod(right, var), Proddd), Difff), TreeOper("*", right , right, Proddd), Divvv)
+            }
+        };
+        TreeInteger(n) : {TreeInteger(0)};
+        TreeVarr(b) :
+        {
+            if (b == var)
+            {
+                TreeInteger(1)
+            }
+            else
+            {
+                TreeInteger(0)
+            }
+        };       
+    }
+}
+
+Upros (a: TreeExpres) -> TreeExpres
+{
+    switch (a)
+    {
+        TreeOper(symbol, left, right, operation):{
+            uleft = Upros(left);
+            uright = Upros(right);
+            if (symbol == "+")
+            {
+                if (uleft == TreeInteger(0))
+                {
+                    uright;
+                }
+                else if (uright == TreeInteger(0))
+                {
+                    uleft;
+                }
+                else 
+                {
+                    TreeOper(symbol, uleft, uright, Summm);
+                }
+            }
+            else if (symbol == "-")
+            {
+                if (uright == TreeInteger(0))
+                {
+                    uleft;
+                }
+                else 
+                {
+                    TreeOper(symbol, uleft, uright, Summm);
+                }
+            }
+            else if (symbol == "*")
+            {
+                if (uright == TreeInteger(1))
+                {
+                    uleft;
+                }
+                else if(uleft == TreeInteger(1))
+                {
+                    uright;
+                }
+                    else if (uright == TreeInteger(0))
+                    {
+                        TreeInteger(0);
+                    }
+                    else if (uleft == TreeInteger(0))
+                    {
+                        TreeInteger(0);
+                    }
+                        else 
+                        {
+                            TreeOper(symbol, uleft, uright, Summm);
+                        }
+            }
+            else //(symbol == "/")
+            {
+                if (uright == TreeInteger(1))
+                {
+                    uleft;
+                }
+                else if (uleft == TreeInteger(0))
+                {
+                  TreeInteger(0);  
+                }
+                else 
+                {
+                    TreeOper(symbol, uleft, uright, Summm);
+                }
+            }
+        };
+        TreeInteger(n) : { TreeInteger(n);};
+        TreeVarr(b) : {TreeVarr(b);};
+    }
+}
+
+minusPolynomm(p : Polynomm) -> Polynomm {
+    Polynomm(mapTree(p.p, \c -> -c));
+}
+
+monProdd(f : Monomm, s : Monomm) -> Monomm {
+    Monomm(mergeTreeCustom(f.m, s.m, \var, a, b -> a + b));
+}
+
+polySumm(f : Polynomm, s : Polynomm) -> Polynomm {
+    Polynomm(mergeTreeCustom(f.p, s.p, \m, a, b -> a + b));
+}
+
+polyDif(f : Polynomm, s : Polynomm) -> Polynomm {
+    polySumm(f, minusPolynomm(s));
+}
+
+polyProdd(f : Polynomm, s : Polynomm) -> Polynomm {
+    Polynomm(foldTree(f.p, makeTree(), \lk, lv, acc -> {
+        foldTree(s.p, acc, \rk, rv, ac -> {
+            mp = monProdd(lk, rk);
+            switch(lookupTree(ac, monProdd(lk, rk))) {
+                Some(coef) : setTree(ac, mp, coef + (lv * rv));
+                None() : setTree(ac, mp, lv * rv);
+            }
+        });
+    }));
+}
+
+
+
+ToFraction(a: TreeExpres) -> Fractionn
+{
+    switch(a) {
+        TreeOper(c, left, right, op) : {
+            l = ToFraction(left);
+            r = ToFraction(right);
+            if (c == "+") {
+                Fractionn(
+                    polySumm(polyProdd(l.top, r.bot), polyProdd(l.bot, r.top)),
+                    polyProdd(l.bot, r.bot)
+                );
+            } else if (c == "-") {
+                Fractionn(
+                    polyDif(polyProdd(l.top, r.bot), polyProdd(l.bot, r.top)),
+                    polyProdd(l.bot, r.bot)
+                );
+            } else if (c == "*") {
+                Fractionn(
+                    polyProdd(l.top, r.top),
+                    polyProdd(l.bot, r.bot)
+                )
+            } else {
+                Fractionn(
+                    polyProdd(l.top, r.bot),
+                    polyProdd(l.bot, r.top)
+                );
+
+            }
+        };
+        TreeInteger(val) : Fractionn(Polynomm(setTree(makeTree(), Monomm(setTree(makeTree(), "", 0)), val)),
+                        Polynomm(setTree(makeTree(), Monomm(setTree(makeTree(), "", 0)), 1)));
+        TreeVarr(var) : Fractionn(Polynomm(setTree(makeTree(), Monomm(setTree(makeTree(), var, 1)), 1)),
+                        Polynomm(setTree(makeTree(), Monomm(setTree(makeTree(), "", 0)), 1)));
+    }
+}
+
+MonomToStringg(m : Monomm) -> string {
+    foldTree(m.m, "", \k, v, acc -> {
+        if (v == 0) {
+            acc;
+        } else if (v == 1) {
+            acc + k;
+        } else if (v > 0) {
+            acc + k + "^" + i2s(v);
+        } else {
+            acc + k + "^(" + i2s(v) + ")";
+        }
+    });
+}
+
+PolynomToStringg(p : Polynomm) -> string {
+    arr = foldTree(p.p, [], \k, v, acc -> {
+        if (v == 0) {
+            acc;
+        } else {
+            monom = MonomToStringg(k);
+            if (monom != "") {
+                if (v > 0) {
+                    if (v == 1) {
+                        arrayPush(acc, monom);
+                    } else {
+                        arrayPush(acc, i2s(v) + monom);
+                    }
+                } else {
+                    if (v == -1) {
+                        arrayPush(acc, "(-" + monom + ")")
+                    } else {
+                        arrayPush(acc, "(" + i2s(v) + monom + ")");
+                    }
+                }
+            } else {
+                if (v > 0) {
+                    arrayPush(acc, i2s(v));
+                } else {
+                    arrayPush(acc, "(" + i2s(v) + ")");
+                }
+            }
+        }
+    });
+    foldi(arr, "", \i, acc, s -> {
+        if (i != 0) {
+            acc + " + " + s;
+        } else {
+            acc + s;
+        }
+    });
+}
+
+FractToStringg(f : Fractionn) -> string {
+    PolynomToStringg(f.top) + "\n-------------------------     <- it's fraction sign\n" + PolynomToStringg(f.bot);
+}
+
+main() {
+	expression = StringToTreee("(((12 + x) / (y * 12)) + (6 * y))");
+	variabless: [Pair<string, int>] = [
+		Pair("a", 10),
+		Pair("x", 15),
+		Pair("y", 45),
+	];
+
+	switch (expression) {
+		Some(tree): {
+			println("Tree: " + toString(tree) + "\n");
+			println("Expression: " + TreeToStringg(tree) + "\n");
+			println("Result: " + toString(TreeToIntt(tree, pairs2tree(variabless))) + "\n");
+            println("Proizv:" + TreeToStringg(Upros(Proizvod(tree, "x"))));
+            println("Upr:" + TreeToStringg(Upros(tree)));
+            frac : Fractionn = ToFraction(Upros(Proizvod(tree, "x")));
+            println(FractToStringg(frac));
+		}
+		None(): println("Something went wrong...")
+	}
+
+	quit(0);
+}

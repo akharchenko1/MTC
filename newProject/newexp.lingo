@@ -1,0 +1,11 @@
+exp=sum|dif|prod|div|int|var;
+sp=" "|"\n"|"\t";
+ws=sp*;
+sum = ws "(" ws exp:l ws "+" ws exp:r ws ")" ws { TreeSum(:l, :r) };
+dif = ws "(" ws exp:l ws "-" ws exp:r ws ")" ws { TreeDif(:l, :r) };
+prod = ws "(" ws exp:l ws "*" ws exp:r ws ")" ws { TreeProd(:l, :r) };
+div = ws "(" ws exp:l ws "/" ws exp:r ws ")" ws { TreeDiv(:l, :r) };
+int = digit+ $i { TreeInteg(s2i($i)) };
+digit='0'-'9';
+letter = 'a'-'z';
+var = letter+ $v {variable($v)};

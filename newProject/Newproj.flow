@@ -1,0 +1,147 @@
+import runtime;
+import maybe;
+import lingo/pegcode/driver;
+import ds/array;
+import ds/arrayutils;
+import ds/tree;
+
+Summ(a: int, b: int) -> int { a + b; }
+Diff(a: int, b: int) -> int { a - b; }
+Prodd(a: int, b: int) -> int { a * b; }
+Divv(a: int, b: int) -> int { a / b; }
+
+TreeExpr ::= TreeOp, TreeInteg;
+TreeInteg(value: int);
+TreeOp(symbol: string, l: TreeExpr, r: TreeExpr, operation: (int, int) -> int);
+
+RpnElem ::= RpnOper, RpnValu;
+RpnValu : (val : int);
+RpnOper : (op : (int, int) -> int, c : string);
+
+StringToTreeN (s: string)->Maybe<TreeExpr>
+{
+    gram= "#include newexp.lingo";
+    parser=compilePegGrammar(gram);
+    result = parsic3(parser, s, 
+		SemanticActions(mergeTree(defaultPegActions.t, 
+			pairs2tree([
+                Pair("TreeSum", \v -> 
+                    TreeOp("+", v[0], v[1], Summ)
+                ),
+                Pair("TreeDif", \v ->
+                    TreeOp("-", v[0], v[1], Diff)
+                ),
+				Pair("TreeProd", \v ->
+                    TreeOp("*", v[0], v[1], Prodd)
+                ),
+				Pair("TreeDiv", \v ->
+                    TreeOp("/", v[0], v[1], Divv)
+                ),
+                Pair("assign", \v -> {
+                    TreeInteg(TreeToIntN(v[1]));
+                })
+            ])
+        )), 
+		TreeInteg(0)
+	);
+	if (result.third == "") {
+		Some(result.first);
+	} else {
+		None();
+	}
+}
+
+TreeToStringN(t: TreeExpr) -> string {
+	switch (t) {
+		TreeInteg(value): i2s(value);
+		TreeOp(symbol, left, right, operation): "(" + TreeToStringN(left) + " " + symbol + " " + TreeToStringN(right) + ")"; 
+	}
+}
+
+TreeToIntN(t: TreeExpr) -> int {
+	switch (t) {
+		TreeInteg(value): value;
+		TreeOp(symbol, left, right, operation): operation(TreeToIntN(left), TreeToIntN(right));
+	}
+}
+
+
+TreeToRPN(a : TreeExpr) -> [RpnElem] {
+     switch(a) {
+         TreeOp(c, first, second, operation) : concat(TreeToRPN(first), concat(TreeToRPN(second), [RpnOper(operation, c)]));
+         TreeInteg(value) : [RpnValu(value)];
+     }
+ }
+
+RPNToInt(a : [RpnElem]) -> Maybe<int> {
+     stack : ref [int] = ref [];
+     iteri(a, \i, elem -> {
+         switch(elem) {
+             RpnValu(val) : refArrayPush(stack, val);
+             RpnOper(op, c) : {
+                 fir : int = lastElement(^stack, 0);
+                 stack := removeLastElement(^stack);
+                 sec : int = lastElement(^stack, 0);
+                 stack := removeLastElement(^stack);
+                 refArrayPush(stack, op(sec, fir));
+             };
+         }
+     });
+     if (length(^stack) == 0) {
+         None();
+     } else {
+         Some(^stack[0]);
+     }
+ }
+
+RPNToTree(r : [RpnElem]) -> TreeExpr {
+     stack : ref [TreeExpr] = ref [];
+     iteri(r, \i, elem -> {
+         switch(elem) {
+             RpnOper(op, c): {
+                 fir : TreeExpr = lastElement(^stack, TreeInteg(0));
+                 stack := removeLastElement(^stack);
+                 sec : TreeExpr = lastElement(^stack, TreeInteg(0));
+                 stack := removeLastElement(^stack);
+                 refArrayPush(stack, TreeOp(c, sec, fir, op));
+             };
+             RpnValu(val): refArrayPush(stack, TreeInteg(val));
+         };
+     });
+     ^stack[0];
+ }
+
+getCharN(r : RpnElem) -> string {
+     switch(r) {
+         RpnValu(val) : i2s(val);
+         RpnOper(op, c) : c;
+     } }
+
+RPNToString(a : [RpnElem]) -> string {
+     result : string = fold(a, "", \result, element -> {
+         switch(element) {
+             RpnValu(value) : result + i2s(value) + " ";
+             RpnOper(op, c) : result + c + " ";
+         }
+     });
+     result;
+ }
+
+
+main() 
+{
+	expression = StringToTreeN("( 4 * (2 + ( ( 7 * 2 ) - 5 ) ) )");
+
+	switch (expression) {
+		Some(tree): {
+			println("Tree: " + toString(tree) + "\n");
+			println("Expression: " + TreeToStringN(tree) + "\n");
+            rpn = TreeToRPN(tree);
+            rpnValu = RPNToInt(rpn);
+            println("Reverse Polish notation : " + RPNToString(rpn)); 
+		}
+		None(): println("Something went wrong...")
+	}
+
+	quit(0);
+}
